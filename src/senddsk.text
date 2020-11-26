@@ -1,0 +1,86 @@
+program senddsk;
+
+  const
+    blksize = 512;              { Bytes in a block }
+    destination = 6;            { Unit number to write bytes to }
+
+  type
+    block = packed array [0..255] of integer;
+
+    {  I/O error codes, copied from GLOBALS.TEXT  }
+    IORSLTWD = (INOERROR,IBADBLOCK,IBADUNIT,IBADMODE,ITIMEOUT,
+	         ILOSTUNIT,ILOSTFILE,IBADTITLE,INOROOM,INOUNIT,
+	         INOFILE,IDUPFILE,INOTCLOSED,INOTOPEN,IBADFORMAT,
+	         ISTRGOVFL);
+ 
+  var
+    source:  integer;
+    totalblocks: integer;
+    dir: record
+      trash1, trash2, trash3: integer;
+      volid: string[7];
+      eovblk: integer;
+      end;
+    ch: char;
+    blk: integer;
+    buf: block;
+    err: integer;
+
+
+begin
+repeat
+  writeln('Logical unit number to be copied:  ');
+  readln(source);
+  if (source <> 0) then
+    begin
+
+    totalblocks := -1;
+    unitread(source, dir, sizeof(dir), 2);
+    if (length(dir.volid) <= 7) then
+      begin
+      writeln('Sending ', dir.volid);
+      writeln('Send ', dir.eovblk, ' blocks?');
+      read(ch);
+      writeln;
+      if ((ch = 'y') or (ch = 'Y')) then
+	totalblocks := dir.eovblk;
+      end;
+    if (totalblocks = -1) then
+      begin
+	repeat
+	  writeln('How many blocks to you want to send? ');
+	  readln(totalblocks);
+	until (ioresult = 0);
+      end;
+    end;
+
+    for blk := 0 to totalblocks - 1 do
+      begin
+      write('Block ', blk, ' ');
+      {$I-}
+      unitread(source, buf, blksize, blk);
+      {$I+}
+      err := ORD(ioresult);
+      if (err <> 0) then
+        begin
+          write('I/O error ', err, ': ');
+          case err of  {  Disk driver errors are mapped to Pascal errors in interpreter file monio.text. }
+	    1 {IBADBLOCK}:  write('CRC error');  
+	    3 {IBADMODE}:   write('Wrote protect');
+	    4 {ITIMEOUT}:   write('Lost data');
+	    5 {ILOSTUNIT}:  write('Drive not ready');  
+	    6 {ILOSTFILE}:  write('Address compare error');
+	    11 {IDUPFILE}:  write('Return-to-zero error');
+          end;
+          write('  Ack:  ');   
+          read(ch);
+        end;
+      unitwrite(destination, buf, blksize, 0, 8 + 4);  {  Set DLEBIT and CRLFBIT for interpreter I/O }
+      writeln();
+      end;
+
+  writeln('Do another disk? ');
+  read(ch);
+  writeln;
+until ((ch = 'n') or (ch = 'N'));
+end.
