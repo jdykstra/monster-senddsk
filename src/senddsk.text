@@ -25,11 +25,19 @@ program senddsk;
     blk: integer;
     buf: block;
     err: integer;
-
+    abort: boolean;
+    errorcnt: integer;
 
 begin
 repeat
-  writeln('Logical unit number to be copied:  ');
+  repeat
+    write('Abort on errors?');
+    read(ch);
+    writeln;
+  until ch in ['y', 'Y', 'n', 'N'];
+  abort := (ch = 'y') or (ch = 'Y');
+  
+  write('Logical unit number to be copied:  ');
   readln(source);
   if (source <> 0) then
     begin
@@ -39,21 +47,22 @@ repeat
     if (length(dir.volid) <= 7) then
       begin
       writeln('Sending ', dir.volid);
-      writeln('Send ', dir.eovblk, ' blocks?');
+      write('Send ', dir.eovblk, ' blocks?');
       read(ch);
       writeln;
       if ((ch = 'y') or (ch = 'Y')) then
-	totalblocks := dir.eovblk;
+	    totalblocks := dir.eovblk;
       end;
     if (totalblocks = -1) then
       begin
-	repeat
-	  writeln('How many blocks to you want to send? ');
-	  readln(totalblocks);
-	until (ioresult = 0);
+	  repeat
+	    writeln('How many blocks to you want to send? ');
+	    readln(totalblocks);
+	  until (ioresult = 0);
       end;
     end;
 
+    errorcnt := 0;
     for blk := 0 to totalblocks - 1 do
       begin
       write('Block ', blk, ' ');
@@ -63,6 +72,7 @@ repeat
       err := ORD(ioresult);
       if (err <> 0) then
         begin
+          errorcnt := errorcnt + 1;
           write('I/O error ', err, ': ');
           case err of  {  Disk driver errors are mapped to Pascal errors in interpreter file monio.text. }
 	    1 {IBADBLOCK}:  write('CRC error');  
@@ -72,13 +82,16 @@ repeat
 	    6 {ILOSTFILE}:  write('Address compare error');
 	    11 {IDUPFILE}:  write('Return-to-zero error');
           end;
-          write('  Ack:  ');   
-          read(ch);
+          if (abort) then
+            exit(senddsk);
         end;
       unitwrite(destination, buf, blksize, 0, 8 + 4);  {  Set DLEBIT and CRLFBIT for interpreter I/O }
       writeln();
       end;
 
+  writeln('Sent ', dir.volid);
+  if (errorcnt > 0) then
+    writeln(errorcnt, ' errors.');
   writeln('Do another disk? ');
   read(ch);
   writeln;
